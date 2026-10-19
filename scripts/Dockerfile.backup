@@ -1,0 +1,19 @@
+FROM postgres:16-alpine
+
+RUN apk add --no-cache bash gzip curl
+
+COPY backup.sh /usr/local/bin/backup.sh
+RUN chmod +x /usr/local/bin/backup.sh
+
+ENV BACKUP_DIR=/backups
+ENV RETENTION_DAYS=7
+ENV DB_HOST=postgres
+ENV DB_PORT=5432
+ENV DB_NAME=finance
+ENV DB_USER=finance
+ENV DB_PASSWORD=finance
+
+VOLUME ["/backups"]
+
+ENTRYPOINT ["/usr/local/bin/backup.sh"]
+CMD ["7"]

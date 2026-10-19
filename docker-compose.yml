@@ -1,0 +1,86 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: finance
+      POSTGRES_DB: finance
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance -d finance"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports: ["3333:3333"]
+    environment:
+      DATABASE_URL: postgresql://finance:finance@db:5432/finance
+      BRAPI_TOKEN: ${BRAPI_TOKEN}
+      PORT: 3333
+      WEB_ORIGIN: http://localhost:5173
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      SYNC_ENABLED: 1
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_MAX: 100
+      RATE_LIMIT_WINDOW_MS: 60000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports: ["5173:80"]
+    depends_on:
+      backend:
+        condition: service_started
+
+  backup:
+    build:
+      context: .
+      dockerfile: scripts/Dockerfile.backup
+    environment:
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: 7
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: finance
+      DB_USER: finance
+      DB_PASSWORD: finance
+    volumes:
+      - backupdata:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    # Run daily at 2 AM
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    # Using a simple cron-like approach with sleep
+    command: >
+      sh -c "
+        while true; do
+          /usr/local/bin/backup.sh 7
+          sleep 86400
+        done
+      "
+
+volumes:
+  pgdata:
+  redisdata:
+  backupdata:
